@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Écart au vote national — Présidentielle 2022 (1<sup>er</sup> tour)</title>
+<link rel="stylesheet" href="vendor/maplibre-gl.css">
+<style>
+  :root{
+    --bg:#e9edf2;
+    --card:#ffffff;
+    --ink:#1c2430;
+    --ink-soft:#5a6675;
+    --line:#dce3ea;
+    --accent:#2f6feb;
+    --shadow:0 6px 24px rgba(20,32,50,.12), 0 1px 3px rgba(20,32,50,.08);
+    --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"Noto Sans",sans-serif;
+    color:var(--ink);background:var(--bg);overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  #map{position:absolute;inset:0;background:var(--bg)}
+  .maplibregl-ctrl-attrib{font-size:10px}
+  .maplibregl-ctrl-bottom-right{bottom:0}
+
+  /* ---------- Layout panels ---------- */
+  .col{
+    position:absolute;top:14px;left:14px;z-index:5;
+    display:flex;flex-direction:column;gap:10px;
+    width:308px;max-height:calc(100vh - 28px);
+    overflow-y:auto;overflow-x:hidden;
+    padding-right:2px;scrollbar-width:thin;
+  }
+  .col::-webkit-scrollbar{width:8px}
+  .col::-webkit-scrollbar-thumb{background:#c6ced8;border-radius:8px}
+  .card{
+    background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);
+    padding:14px 15px;border:1px solid rgba(255,255,255,.6);
+  }
+  h1{font-size:15.5px;line-height:1.25;margin:0 0 4px;font-weight:700;letter-spacing:-.2px}
+  .sub{font-size:11.5px;color:var(--ink-soft);line-height:1.35;margin:0}
+  h2{
+    font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;
+    color:var(--ink-soft);margin:0 0 9px;font-weight:700;
+  }
+
+  /* ---------- Candidate chips ---------- */
+  .cands{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .chip{
+    display:flex;align-items:center;gap:7px;cursor:pointer;
+    border:1px solid var(--line);background:#fff;border-radius:9px;
+    padding:6px 8px;font-size:12px;font-weight:600;color:var(--ink);
+    text-align:left;line-height:1.1;transition:.12s;font-family:inherit;
+  }
+  .chip:hover{border-color:#b9c4d1;background:#f6f8fb}
+  .chip .dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto;box-shadow:0 0 0 1px rgba(0,0,0,.08) inset}
+  .chip.active{border-color:var(--accent);background:#eef4ff;box-shadow:0 0 0 1px var(--accent) inset}
+  .chip .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .chip .pct{margin-left:auto;font-weight:600;color:var(--ink-soft);font-size:10.5px;font-variant-numeric:tabular-nums}
+  .card.dim{opacity:.4;pointer-events:none;filter:saturate(.4)}
+  .dim-note{display:none;font-size:10.5px;color:var(--ink-soft);margin:8px 0 0}
+  .card.dim .dim-note{display:block}
+
+  /* ---------- Classement ---------- */
+  #rankBlock{margin-top:14px}
+  .rank{display:flex;flex-direction:column;gap:2px}
+  .rank .item{
+    display:flex;align-items:baseline;gap:8px;padding:4px 7px;border-radius:7px;
+    cursor:pointer;font-size:11.5px;line-height:1.3;
+  }
+  .rank .item:hover{background:#eef3f9}
+  .rank .item .nm{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rank .item .d{color:var(--ink-soft);font-size:10px;flex:0 0 auto}
+  .rank .item .v{margin-left:auto;font-weight:700;font-variant-numeric:tabular-nums;flex:0 0 auto}
+
+  /* ---------- Segmented toggles ---------- */
+  .seg{display:flex;background:#eef1f5;border-radius:9px;padding:3px;gap:3px}
+  .seg button{
+    flex:1;border:0;background:transparent;border-radius:7px;padding:0 6px;min-height:34px;
+    display:flex;align-items:center;justify-content:center;text-align:center;line-height:1.15;
+    font:inherit;font-size:11px;font-weight:600;color:var(--ink-soft);cursor:pointer;transition:.12s;
+  }
+  .seg button.active{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(20,32,50,.14)}
+  .field{margin-top:12px}
+  .field:first-of-type{margin-top:0}
+
+  /* ---------- Legend ---------- */
+  .legend .bar{height:13px;border-radius:4px;border:1px solid rgba(0,0,0,.08)}
+  .legend .scale{display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-soft);margin-top:5px;font-variant-numeric:tabular-nums}
+  .legend .cap{font-size:11px;color:var(--ink-soft);margin-top:7px;line-height:1.35}
+  .legend .cap b{color:var(--ink);font-weight:700}
+
+  /* ---------- Info / stats ---------- */
+  .info{position:absolute;top:14px;right:14px;z-index:5;width:296px;max-height:calc(100vh - 28px);overflow:auto}
+  .stat-title{display:flex;align-items:center;gap:8px;margin-bottom:2px}
+  .stat-title .dot{width:11px;height:11px;border-radius:50%}
+  .stat-title .who{font-size:14px;font-weight:700}
+  .stat-nat{font-size:11.5px;color:var(--ink-soft);margin:2px 0 10px}
+  .stat-nat b{color:var(--ink)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:10px}
+  .kpi{background:#f5f7fa;border-radius:9px;padding:7px 9px}
+  .kpi .k{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:700}
+  .kpi .v{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:1px}
+  .kpi .u{font-size:10px;color:var(--ink-soft);font-weight:600}
+  canvas#hist{width:100%;height:86px;display:block;border-radius:8px;background:#f5f7fa}
+  .hist-cap{font-size:10px;color:var(--ink-soft);margin-top:5px;line-height:1.35}
+
+  /* ---------- Tooltip ---------- */
+  #tooltip{
+    position:absolute;z-index:20;pointer-events:none;opacity:0;transition:opacity .1s;
+    background:rgba(255,255,255,.98);border:1px solid var(--line);border-radius:10px;
+    box-shadow:var(--shadow);padding:9px 11px;font-size:12px;max-width:250px;transform:translate(-50%,-100%);
+  }
+  #tooltip .tt-name{font-weight:700;font-size:12.5px;margin-bottom:2px}
+  #tooltip .tt-dept{font-size:10.5px;color:var(--ink-soft);margin-bottom:6px}
+  #tooltip .row{display:flex;justify-content:space-between;gap:14px;line-height:1.55}
+  #tooltip .row .lbl{color:var(--ink-soft)}
+  #tooltip .row .val{font-weight:700;font-variant-numeric:tabular-nums}
+  #tooltip .diff{margin-top:5px;padding-top:5px;border-top:1px dashed var(--line)}
+
+  /* ---------- Loading ---------- */
+  #loading{
+    position:absolute;inset:0;z-index:50;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:14px;background:var(--bg);
+    transition:opacity .4s;font-size:13px;color:var(--ink-soft)
+  }
+  #loading.hidden{opacity:0;pointer-events:none}
+  .spinner{width:34px;height:34px;border-radius:50%;border:3px solid #cbd4de;border-top-color:var(--accent);animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .note{font-size:10.5px;color:var(--ink-soft);line-height:1.4}
+  .note a{color:var(--accent);text-decoration:none}
+  .note a:hover{text-decoration:underline}
+
+  @media (max-width:820px){
+    .col{width:250px;max-height:calc(100vh - 120px)}
+    .info{display:none}
+    .chip .pct{display:none}
+  }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="col">
+  <div class="card">
+    <h1>Écart au vote national</h1>
+    <p class="sub">Présidentielle 2022 — 1<sup>er</sup> tour. Différence entre le score de chaque candidat dans la commune et son score national, par commune de France métropolitaine.</p>
+  </div>
+
+  <div class="card" id="candCard">
+    <h2>Candidat</h2>
+    <div class="cands" id="candButtons"></div>
+    <p class="dim-note">Non utilisé en mode « Écart global » (le profil des 12 candidats est pris en compte).</p>
+  </div>
+
+  <div class="card">
+    <div class="field">
+      <h2>Mesure</h2>
+      <div class="seg" id="metricSeg">
+        <button data-metric="abs" class="active">Écart absolu</button>
+        <button data-metric="signed">Écart signé</button>
+        <button data-metric="global">Écart global</button>
+      </div>
+    </div>
+    <div class="field">
+      <h2>Référence nationale</h2>
+      <div class="seg" id="refSeg">
+        <button data-ref="official" class="active" title="Résultats officiels France entière (Conseil constitutionnel)">France entière</button>
+        <button data-ref="dataset" title="Agrégat du jeu de données : métropole + outre-mer, hors Français de l'étranger">Métropole + OM</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card legend">
+    <h2 id="legendTitle">Écart absolu</h2>
+    <div class="bar" id="legendBar"></div>
+    <div class="scale"><span id="legendMin">0</span><span id="legendMid"></span><span id="legendMax"></span></div>
+    <p class="cap" id="legendCap"></p>
+  </div>
+
+  <div class="card">
+    <p class="note" id="sourceNote"></p>
+  </div>
+</div>
+
+<div class="card info" id="info">
+  <div class="stat-title"><span class="dot" id="infoDot"></span><span class="who" id="infoWho">—</span></div>
+  <div class="stat-nat" id="infoNat"></div>
+  <div class="grid">
+    <div class="kpi"><div class="k">Médiane</div><div class="v"><span id="kMed">—</span><span class="u"> pt</span></div></div>
+    <div class="kpi"><div class="k">Moyenne</div><div class="v"><span id="kMean">—</span><span class="u"> pt</span></div></div>
+    <div class="kpi"><div class="k">Écart max</div><div class="v"><span id="kMax">—</span><span class="u"> pt</span></div></div>
+    <div class="kpi"><div class="k" id="kNearLabel">≤ 2 pts</div><div class="v"><span id="kNear">—</span><span class="u"> %</span></div></div>
+  </div>
+  <canvas id="hist" width="560" height="172"></canvas>
+  <p class="hist-cap" id="histCap">Répartition des communes selon l'écart au score national (échelle tronquée au 99<sup>e</sup> centile).</p>
+
+  <div id="rankBlock" style="display:none">
+    <h2 style="margin-top:14px">Les plus représentatives</h2>
+    <div class="rank" id="rankMost"></div>
+    <h2 style="margin-top:14px">Les moins représentatives</h2>
+    <div class="rank" id="rankLeast"></div>
+    <p class="hist-cap">Communes dont le profil des 12 candidats est le plus proche / le plus éloigné de la moyenne nationale (communes de ≥ 1 000 exprimés). Cliquez pour localiser.</p>
+  </div>
+</div>
+
+<div id="tooltip"></div>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <div id="loadingText">Chargement des données…</div>
+</div>
+
+<script src="vendor/maplibre-gl.js"></script>
+<script src="data/communes.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
